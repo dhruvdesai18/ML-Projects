@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Analyzer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 900px; margin: auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background-color: #ffffff; }
+        h1, h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }
+        input[type="file"] { margin-bottom: 20px; padding: 8px; border: 1px solid #ccc; border-radius: 5px; width: calc(100% - 100px); display: inline-block; vertical-align: middle;}
+        button { background-color: #3498db; color: white; padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; transition: background-color 0.3s ease; margin-right: 15px; }
+        button:hover { background-color: #2980b9; }
+        button:active { background-color: #21618c; }
+        #uploadStatus { margin-top: 15px; font-weight: bold; }
+        .success { color: #27ae60; }
+        .error { color: #e74c3c; }
+        #buttons { margin-top: 30px; padding: 15px; border-top: 1px solid #eee; }
+        #output { margin-top: 25px; border: 1px solid #dcdcdc; padding: 20px; background-color: #fcfcfc; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; max-height: 500px; overflow-y: auto;}
+        .speaker-line { margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #3498db; }
+        .speaker-name { font-weight: bold; color: #1a5276; display: block; margin-bottom: 3px; font-size: 1.1em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗣️ Audio Analysis Tool with Gemini AI</h1>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+            <label for="audio_file_input" style="font-size: 1.1em; margin-bottom: 10px; display: block;">Upload an Audio File:</label>
+            <input type="file" name="audio" accept="audio/*" required id="audio_file_input">
+            <button type="submit">Upload & Analyze Audio</button>
+        </form>
+
+        <p id="uploadStatus"></p>
+
+        <div id="buttons" style="display: none;">
+            <h2>Choose Output:</h2>
+            <button onclick="fetchData('conversation')">Conversation</button>
+            <button onclick="fetchData('summary')">Summary</button>
+            <button onclick="fetchData('sentiment')">Sentiment</button>
+            <button onclick="fetchData('solution')">Solution</button>
+        </div>
+
+        <h2>Analysis Output:</h2>
+        <div id="output">
+            <p>Upload an audio file and click "Upload & Analyze Audio" to begin.</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Prevent default form submission
+            const formData = new FormData(this);
+            const uploadStatus = document.getElementById('uploadStatus');
+            const buttonsDiv = document.getElementById('buttons');
+            const outputDiv = document.getElementById('output');
+
+            uploadStatus.textContent = 'Uploading and analyzing audio... This might take a while depending on file size.';
+            uploadStatus.className = ''; // Clear previous status classes
+            outputDiv.innerHTML = '<p>Processing...</p>'; // Clear previous output and show processing message
+            buttonsDiv.style.display = 'none'; // Hide buttons until analysis is done
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    uploadStatus.textContent = data.message;
+                    uploadStatus.classList.add('success');
+                    if (data.data_available) {
+                        buttonsDiv.style.display = 'block'; // Show buttons
+                        outputDiv.innerHTML = '<p>Analysis complete! Now select an option above.</p>'; // Update output message
+                    }
+                } else {
+                    uploadStatus.textContent = 'Error: ' + (data.error || 'Unknown error during upload.');
+                    uploadStatus.classList.add('error');
+                    outputDiv.innerHTML = `<p class="error">Error during analysis: ${data.error || 'Please check server logs.'}</p>`;
+                }
+            } catch (error) {
+                uploadStatus.textContent = 'An network error occurred: ' + error.message;
+                uploadStatus.classList.add('error');
+                outputDiv.innerHTML = `<p class="error">Network error: ${error.message}. Please check your connection.</p>`;
+            }
+        });
+
+        async function fetchData(dataType) {
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = `<p>Fetching ${dataType}...</p>`; // Show fetching message
+
+            try {
+                const response = await fetch(`/get_data/${dataType}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (dataType === 'conversation') {
+                        let conversationHtml = '<h3>Complete Conversation:</h3>';
+                        const conversationTurns = data.Conversation; // This will now be an array
+
+                        if (Array.isArray(conversationTurns) && conversationTurns.length > 0) {
+                            conversationTurns.forEach(turn => {
+                                if (turn.Speaker && turn.Message) {
+                                    conversationHtml += `<div class="speaker-line"><span class="speaker-name">${turn.Speaker}:</span> ${turn.Message}</div>`;
+                                }
+                            });
+                        } else {
+                            conversationHtml += '<p>No detailed conversation data available or data is not in expected format.</p>';
+                            if (conversationTurns) {
+                                // Show raw data if it exists but is not an array or empty, for debugging
+                                conversationHtml += `<p>Raw data received for conversation: <pre>${JSON.stringify(conversationTurns, null, 2)}</pre></p>`;
+                            }
+                        }
+                        outputDiv.innerHTML = conversationHtml;
+                    } else {
+                        // For other types, display as pretty-printed JSON or plain text
+                        const displayDataKey = dataType.charAt(0).toUpperCase() + dataType.slice(1);
+                        const displayData = data[displayDataKey];
+
+                        if (typeof displayData === 'object' && displayData !== null) {
+                            // If it's still an object (e.g., if sentiment had sub-keys)
+                            outputDiv.innerHTML = `<h3>${displayDataKey}:</h3><pre>${JSON.stringify(displayData, null, 2)}</pre>`;
+                        } else {
+                            // Otherwise, display as plain text
+                            outputDiv.innerHTML = `<h3>${displayDataKey}:</h3><p>${displayData || 'N/A'}</p>`;
+                        }
+                    }
+                } else {
+                    outputDiv.innerHTML = `<p class="error">Error fetching ${dataType}: ${data.error || 'Unknown error'}</p>`;
+                }
+            } catch (error) {
+                outputDiv.innerHTML = `<p class="error">An network error occurred while fetching ${dataType}: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
